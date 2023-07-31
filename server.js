@@ -20,31 +20,38 @@ const redisClient = new Redis();
 app.post("/bidresponse", async (req, res) => {
   try {
     const { ticker, id, price } = req.body;
+
     const cnt = await redisClient.incr(`${ticker}-cnt`);
+
     await redisClient.zadd(
       `${ticker}-bid`,
       price * 10000 - cnt,
-      JSON.stringify({ id, price, order: cnt })
+      JSON.stringify({ id: id, price: price, order: cnt })
     );
 
     redisClient
       .multi()
-      .zrange(`${ticker}-asks`, 0, 0, "WITHSCORES")
-      .zrevrange(`${ticker}-bids`, 0, 0, "WITHSCORES")
+      .zrevrange(`${ticker}-bid`, 0, 0, "WITHSCORES")
+      .zrange(`${ticker}-ask`, 0, 0, "WITHSCORES")
       .exec(async (err, results) => {
-        const lowestAsk = results[0];
-        const highestBid = results[1];
+        if (err) {
+          console.error("Redis Error:", err);
+          return;
+        }
 
-        if (highestBid?.length > 0 && lowestAsk?.length > 0) {
-          const highestBidPrice = parseFloat(highestBid[0]);
-          const lowestAskPrice = parseFloat(lowestAsk[0]);
+        if (results[0][1].length > 0 && results[1][1].length > 0) {
+          const highestBid = JSON.parse(results[0][1][0]);
+          const lowestAsk = JSON.parse(results[1][1][0]);
+
+          const highestBidPrice = parseFloat(highestBid.price);
+          const lowestAskPrice = parseFloat(lowestAsk.price);
 
           if (highestBidPrice > lowestAskPrice) {
             try {
               redisClient
                 .multi()
-                .zrem(`${ticker}-bids`, highestBid[0])
-                .zrem(`${ticker}-asks`, lowestAsk[0])
+                .zrem(`${ticker}-bid`, JSON.stringify(highestBid))
+                .zrem(`${ticker}-ask`, JSON.stringify(lowestAsk))
                 .exec((err) => {
                   if (err) {
                     console.error("Error executing transaction:", err);
@@ -65,6 +72,7 @@ app.post("/bidresponse", async (req, res) => {
             }
           }
         }
+        return res.json({ success: "good" });
       });
   } catch (error) {
     console.error("Error in /bidresponse endpoint:", error);
@@ -72,8 +80,8 @@ app.post("/bidresponse", async (req, res) => {
   }
 });
 
-// Get Ask Responses
-app.post("/askresponse/:ticker", async (req, res) => {});
+// // Get Ask Responses
+// app.post("/askresponse/", async (req, res) => {});
 
 const PORT = process.env.PORT;
 app.listen(PORT, () => {
