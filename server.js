@@ -14,7 +14,103 @@ const axios = require("axios");
 // redis-server
 // redis-cli
 const Redis = require("ioredis");
+const { json } = require("body-parser");
 const redisClient = new Redis();
+
+const findMatch = async (ticker, highestBidPrice, lowestAskPrice) => {
+  if (highestBidPrice > lowestAskPrice) {
+    const multi = redisClient.multi();
+
+    // Remove the highest bid from the sorted set
+    multi.zrem(`${ticker}-bids`, highestBidPrice, (err) => {
+      if (err) {
+        console.error("Error removing highest bid:", err);
+      }
+    });
+
+    // Remove the lowest ask from the sorted set
+    multi.zrem(`${ticker}-asks`, lowestAskPrice, (err) => {
+      if (err) {
+        console.error("Error removing lowest ask:", err);
+      }
+    });
+
+    return "your match!";
+  } else {
+    return "there is no match";
+  }
+};
+
+// Get Bid Responses
+app.post("/bidresponse", async (req, res) => {
+  const { ticker, id, price } = req.body;
+
+  // give them count
+  const cnt = await redisClient.incr(`${ticker}-cnt`);
+
+  await redisClient.zadd(
+    `${ticker}-bid`,
+    price * 10000 - cnt,
+    JSON.stringify({ id: id, price: price, order: cnt })
+  );
+
+  const multi = redisClient.multi();
+
+  // Retrieve the lowest ask (lowest price) from the sorted set
+  multi.zrange(`${ticker}-asks`, 0, 0, "WITHSCORES");
+
+  // Retrieve the highest bid (highest price) from the sorted set
+  multi.zrevrange(`${ticker}-bids`, 0, 0, "WITHSCORES");
+
+  multi.exec((err, results) => {
+    const lowestAsk = results[0];
+    const highestBid = results[1];
+
+    if (
+      highestBid &&
+      highestBid.length > 0 &&
+      lowestAsk &&
+      lowestAsk.length > 0
+    ) {
+      const highestBidPrice = parseFloat(highestBid[0]);
+      const lowestAskPrice = parseFloat(lowestAsk[0]);
+
+      if (highestBidPrice > lowestAskPrice) {
+
+        const multi = redisClient.multi();
+
+        // Remove the highest bid from the sorted set
+        multi.zrem(`${ticker}-bids`, highestBid[0], (err) => {
+          if (err) {
+            console.error("Error removing highest bid:", err);
+            return res
+              .status(500)
+              .json({ error: "Error removing highest bid." });
+          }})
+
+        // Remove the lowest ask from the sorted set
+        multi.zrem(`${ticker}-asks`, lowestAsk[0], (err) => {
+        if (err) {
+            console.error("Error removing lowest ask:", err);
+            return res
+            .status(500)
+            .json({ error: "Error removing lowest ask." });
+        }})
+
+        // Return the removed highest bid and lowest ask as the response
+        return res.json({
+            highestBid: JSON.parse(highestBidPrice),
+            lowestAsk: JSON.parse(lowestAskPrice),
+        });
+          }};
+    }
+  });
+});
+
+// Get Ask Responses
+app.post("/askresponse/:ticker", async (req, res) => {});
+
+// Send Trade Request
 
 async function getBidResponse(url, data) {
   try {
