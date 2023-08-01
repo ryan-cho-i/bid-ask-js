@@ -8,6 +8,19 @@ const Redis = require("ioredis");
 const { json } = require("body-parser");
 const redisClient = new Redis();
 
+const path = require("path");
+const WebSocket = require("ws"); // Import the WebSocket library
+const wss = new WebSocket.Server({ port: process.env.WS_PORT }); // You can use any available port
+
+// Broadcast data to all connected clients
+function broadcastData(data) {
+  wss.clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(JSON.stringify(data));
+    }
+  });
+}
+
 async function handleResponse(req, res, orderType) {
   try {
     const { ticker, id, price } = req.body;
@@ -33,6 +46,8 @@ async function handleResponse(req, res, orderType) {
 
         console.log(results[0]);
         console.log(results[1]);
+
+        broadcastData({ bid: results[0], ask: results[1] });
 
         // Check that both bid and ask sets have at least one element
         if (results[0][1].length == 0 || results[1][1].length == 0) {
@@ -87,6 +102,10 @@ app.post("/bidresponse", async (req, res) => {
 
 app.post("/askresponse", async (req, res) => {
   handleResponse(req, res, "ask");
+});
+
+app.get("/", async (req, res) => {
+  res.sendFile(path.join(__dirname, "client.html"));
 });
 
 const PORT = process.env.PORT || 3000;
