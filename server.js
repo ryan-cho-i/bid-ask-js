@@ -47,10 +47,9 @@ async function handleResponse(req, res, orderType) {
         console.log(results[0]);
         console.log(results[1]);
 
-        broadcastData({ bid: results[0], ask: results[1] });
-
         // Check that both bid and ask sets have at least one element
         if (results[0][1].length == 0 || results[1][1].length == 0) {
+          broadcastData({ bid: results[0], ask: results[1] });
           return res.json({ success: "good" });
         }
 
@@ -61,6 +60,7 @@ async function handleResponse(req, res, orderType) {
         const lowestAskPrice = parseFloat(lowestAsk.price);
 
         if (highestBidPrice < lowestAskPrice) {
+          broadcastData({ bid: results[0], ask: results[1] });
           return res.json({ success: "good" });
         }
 
@@ -76,6 +76,7 @@ async function handleResponse(req, res, orderType) {
                   .status(500)
                   .json({ error: "Error executing transaction." });
               }
+              broadcastData({ bid: highestBidPrice, ask: lowestAskPrice });
               return res.json({
                 highestBid: highestBidPrice,
                 lowestAsk: lowestAskPrice,
